@@ -32,6 +32,7 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
     float _TransmittanceExtinction;
     float _IncomingLoss; // 光线到x处剩余的能量
     float _HGFactor; // _HGFactor影响散射光在顺光或逆光方向上的相对强度，取值范围[-1, 1]，1在逆光上最强。
+    float _Absorption;
     float4 _RenderExtent;
     float4 _BlueNoiseTexture_TexelSize;
 
@@ -151,6 +152,8 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
         lightColor *= shadowAt(pos);
         //透射率造成的衰减
         lightColor *= transmittance;
+        //散射系数=消光系数-吸收系数，但这里参数简化为比例，即散射系数=消光系数*(1 - _Absorption)
+        lightColor *= extinctionAt(pos, _BrightIntensity) * (1 - _Absorption);
         //风格化亮部
         lightColor *= _BrightIntensity;
 

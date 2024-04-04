@@ -32,6 +32,7 @@ namespace RecaNoMaho
             public static readonly int _BoundaryPlanes = Shader.PropertyToID("_BoundaryPlanes");
             public static readonly int _Steps = Shader.PropertyToID("_Steps");
             public static readonly int _TransmittanceExtinction = Shader.PropertyToID("_TransmittanceExtinction");
+            public static readonly int _Absorption = Shader.PropertyToID("_Absorption");
             public static readonly int _IncomingLoss = Shader.PropertyToID("_IncomingLoss");
             public static readonly int _HGFactor = Shader.PropertyToID("_HGFactor");
             public static readonly int _BlueNoiseTexture = Shader.PropertyToID("_BlueNoiseTexture");
@@ -141,6 +142,7 @@ namespace RecaNoMaho
                     cmd.SetGlobalInt(ShaderConstants._Steps, lightVolumeRenderer.stepOverride ? lightVolumeRenderer.rayMarchingSteps : globalParams.steps);
                     cmd.SetGlobalFloat(ShaderConstants._TransmittanceExtinction,
                         lightVolumeRenderer.extinctionOverride ? lightVolumeRenderer.GetExtinction(): globalParams.GetExtinction());
+                    cmd.SetGlobalFloat(ShaderConstants._Absorption, lightVolumeRenderer.extinctionOverride ? lightVolumeRenderer.absorption : globalParams.absorption);
                     cmd.SetGlobalFloat(ShaderConstants._IncomingLoss, lightVolumeRenderer.inComingLoss);
                     cmd.SetGlobalFloat(ShaderConstants._HGFactor, globalParams.HGFactor);
                     if (globalParams.blueNoiseTextures.Count != 0)

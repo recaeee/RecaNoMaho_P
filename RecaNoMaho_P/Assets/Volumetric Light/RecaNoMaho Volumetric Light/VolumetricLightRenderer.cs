@@ -17,6 +17,7 @@ namespace RecaNoMaho
         [Tooltip("（仅对方向光源生效）")]public float dirLightDistance = 100;
         public bool extinctionOverride = false;
         [Tooltip("体积光的可见距离(影响介质透射率)")][Range(0.01f, 50f)]public float visibilityDistance = 50;
+        [Tooltip("吸收系数（非严格按照公式）")] [Range(0, 1)] public float absorption = 0.1f;
         
         [Tooltip("控制光源强度的系数")][Range(0f, 2f)]public float intensityMultiplier = 1;
 
