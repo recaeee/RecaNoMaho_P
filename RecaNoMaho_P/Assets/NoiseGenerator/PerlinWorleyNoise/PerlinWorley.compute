@@ -1,0 +1,53 @@
+//PerlinWorley Noise生成参考https://www.shadertoy.com/view/3dVXDc
+#pragma kernel Main
+
+Texture3D<float4> _BasePerlinNoise;
+Texture3D<float4> _BaseWorleyNoise;
+RWStructuredBuffer<float4> _Colors;
+RWTexture2D<float4> _Texture2D;
+RWTexture3D<float4> _Texture3D;
+
+int _Resolution;
+bool _Is3D;
+
+float remap(float x, float a, float b, float c, float d)
+{
+    return (((x - a) / (b - a)) * (d - c)) + c;
+}
+
+[numthreads(16,16,1)]
+void Main (uint3 id : SV_DispatchThreadID)
+{
+    int colorIndex = id.x;
+    colorIndex += _Resolution * id.y;
+    colorIndex += _Resolution * _Resolution * id.z;
+
+    if(_Is3D)
+    {
+        if(colorIndex >= _Resolution * _Resolution * _Resolution)
+        {
+            return;
+        }
+    }
+    else
+    {
+        if(colorIndex >= _Resolution * _Resolution)
+        {
+            return;
+        }
+    }
+    
+    float noise = remap(_BasePerlinNoise[id.xyz].r, 0., 1., _BaseWorleyNoise[id.xyz].r, 1.);
+    
+    _Colors[colorIndex] = float4(noise, noise, noise, 1);
+
+    if(_Is3D)
+    {
+        _Texture3D[id.xyz] = float4(noise, noise, noise ,1);
+    }
+    else
+    {
+        _Texture2D[id.xy] = float4(noise, noise, noise, 1);
+    }
+   
+}

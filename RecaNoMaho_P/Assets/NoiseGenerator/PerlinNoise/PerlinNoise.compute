@@ -1,0 +1,185 @@
+#pragma kernel Main
+
+#include "../Base/NoiseLibrary.hlsl"
+
+struct Pixel {
+    int3 coord;
+
+    float3 lerp;
+
+    float3 cornerVector0;
+    float3 cornerVector1;
+    float3 cornerVector2;
+    float3 cornerVector3;
+    float3 cornerVector4;
+    float3 cornerVector5;
+    float3 cornerVector6;
+    float3 cornerVector7;
+
+    float3 constantVector0;
+    float3 constantVector1;
+    float3 constantVector2;
+    float3 constantVector3;
+    float3 constantVector4;
+    float3 constantVector5;
+    float3 constantVector6;
+    float3 constantVector7;
+};
+
+RWStructuredBuffer<float4> _Colors;
+RWTexture2D<float4> _Texture2D;
+RWTexture3D<float4> _Texture3D;
+
+int _Resolution;
+float _Frequency;
+bool _Is3D;
+bool _IsTilable;
+float _RandomSeed;
+float3 _Evolution;
+int _FBMIteration;
+
+float PerlinNoiseLerp(float l, float r, float t) {
+    t = ((6 * t - 15) * t + 10) * t * t * t;
+    return lerp(l, r, t);
+}
+
+float3 GetConstantVector(int blockNumber, int3 blockCoord, float randomSeed) {
+    if (_IsTilable) {
+        if (blockCoord.x == blockNumber) {
+            blockCoord.x = 0;
+        }
+
+        if (blockCoord.y == blockNumber) {
+            blockCoord.y = 0;
+        }
+
+        if (blockCoord.z == blockNumber) {
+            blockCoord.z = 0;
+        }
+    }
+
+    float3 vec = GetRandom3To3_Raw(blockCoord + _Evolution, length(blockCoord) * randomSeed);
+    vec = normalize(vec);
+    return vec;
+}
+
+float GetNoiseValue(uint3 id, float tile, float randomSeed) {
+    uint blockNumber = ceil(tile);
+
+    int blockSize = ceil((float)_Resolution / blockNumber);
+
+    Pixel pixel = (Pixel)0;
+    pixel.coord = id.xyz;
+
+    int3 blockCoord = PixelCoordToBlockCoord(blockSize, pixel.coord);
+    int3 blockMin = GetBlockMin(blockSize, blockCoord);
+    int3 blockMax = GetBlockMax(blockSize, blockCoord);
+
+    pixel.lerp.x = (pixel.coord.x - blockMin.x) / (blockSize - 1.0);
+    pixel.lerp.y = (pixel.coord.y - blockMin.y) / (blockSize - 1.0);
+    pixel.lerp.z = (pixel.coord.z - blockMin.z) / (blockSize - 1.0);
+
+    pixel.cornerVector0 = pixel.coord - float3(blockMin.x, blockMin.y, blockMin.z);
+    pixel.cornerVector1 = pixel.coord - float3(blockMin.x, blockMax.y, blockMin.z);
+    pixel.cornerVector2 = pixel.coord - float3(blockMax.x, blockMax.y, blockMin.z);
+    pixel.cornerVector3 = pixel.coord - float3(blockMax.x, blockMin.y, blockMin.z);
+
+    pixel.cornerVector0 /= blockSize;
+    pixel.cornerVector1 /= blockSize;
+    pixel.cornerVector2 /= blockSize;
+    pixel.cornerVector3 /= blockSize;
+
+    pixel.constantVector0 = GetConstantVector(blockNumber, blockCoord + int3(0, 0, 0), randomSeed);
+    pixel.constantVector1 = GetConstantVector(blockNumber, blockCoord + int3(0, 1, 0), randomSeed);
+    pixel.constantVector2 = GetConstantVector(blockNumber, blockCoord + int3(1, 1, 0), randomSeed);
+    pixel.constantVector3 = GetConstantVector(blockNumber, blockCoord + int3(1, 0, 0), randomSeed);
+
+    if (_Is3D) {
+        pixel.cornerVector4 = pixel.coord - float3(blockMin.x, blockMin.y, blockMax.z);
+        pixel.cornerVector5 = pixel.coord - float3(blockMin.x, blockMax.y, blockMax.z);
+        pixel.cornerVector6 = pixel.coord - float3(blockMax.x, blockMax.y, blockMax.z);
+        pixel.cornerVector7 = pixel.coord - float3(blockMax.x, blockMin.y, blockMax.z);
+
+        pixel.cornerVector4 /= blockSize;
+        pixel.cornerVector5 /= blockSize;
+        pixel.cornerVector6 /= blockSize;
+        pixel.cornerVector7 /= blockSize;
+
+        pixel.constantVector4 = GetConstantVector(blockNumber, blockCoord + int3(0, 0, 1), randomSeed);
+        pixel.constantVector5 = GetConstantVector(blockNumber, blockCoord + int3(0, 1, 1), randomSeed);
+        pixel.constantVector6 = GetConstantVector(blockNumber, blockCoord + int3(1, 1, 1), randomSeed);
+        pixel.constantVector7 = GetConstantVector(blockNumber, blockCoord + int3(1, 0, 1), randomSeed);
+    }
+
+    float dot0 = dot(pixel.cornerVector0, pixel.constantVector0);
+    float dot1 = dot(pixel.cornerVector1, pixel.constantVector1);
+    float dot2 = dot(pixel.cornerVector2, pixel.constantVector2);
+    float dot3 = dot(pixel.cornerVector3, pixel.constantVector3);
+
+    float dotA = PerlinNoiseLerp(dot0, dot3, pixel.lerp.x);
+    float dotB = PerlinNoiseLerp(dot1, dot2, pixel.lerp.x);
+    float dotC = PerlinNoiseLerp(dotA, dotB, pixel.lerp.y);
+    
+    float noise = 0;
+
+    if(_Is3D) {
+        float dot4 = dot(pixel.cornerVector4, pixel.constantVector4);
+        float dot5 = dot(pixel.cornerVector5, pixel.constantVector5);
+        float dot6 = dot(pixel.cornerVector6, pixel.constantVector6);
+        float dot7 = dot(pixel.cornerVector7, pixel.constantVector7);
+
+        float dotD = PerlinNoiseLerp(dot4, dot7, pixel.lerp.x);
+        float dotE = PerlinNoiseLerp(dot5, dot6, pixel.lerp.x);
+        float dotF = PerlinNoiseLerp(dotD, dotE, pixel.lerp.y);
+
+        noise = PerlinNoiseLerp(dotC, dotF, pixel.lerp.z);
+    }
+    else {
+        noise = dotC;
+    }
+
+    noise = (noise + 1.0) / 2.0;
+
+    return noise;
+}
+
+[numthreads(16,16,1)]
+void Main(uint3 id : SV_DispatchThreadID)
+{
+    int colorIndex = id.x;
+    colorIndex += _Resolution * id.y;
+    colorIndex += _Resolution * _Resolution * id.z;
+
+    if(_Is3D) {
+        if(colorIndex >= _Resolution * _Resolution * _Resolution) {
+            return;
+        }
+    }
+    else {
+        if(colorIndex >= _Resolution * _Resolution) {
+            return;
+        }
+    }
+
+    float noise = GetNoiseValue(id, _Frequency, _RandomSeed);
+
+    float currentTile = _Frequency;
+    float currentStrength = 1;
+    for(int iii = 0; iii < _FBMIteration; iii++) {
+        currentTile *= 2;
+        currentStrength /= 2;
+        if(currentTile >= _Resolution) {
+            currentTile /= 2;
+        }
+        noise += GetNoiseValue(id, currentTile, _RandomSeed + currentTile) * currentStrength;
+    }
+
+    _Colors[colorIndex] = float4(noise, noise, noise, 1);
+
+    if(_Is3D) {
+        _Texture3D[id.xyz] = float4(noise, noise, noise, 1);
+    }
+    else {
+        _Texture2D[id.xy] = float4(noise, noise, noise, 1);
+    }
+}

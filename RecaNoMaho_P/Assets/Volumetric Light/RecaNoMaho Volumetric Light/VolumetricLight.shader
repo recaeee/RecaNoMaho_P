@@ -14,35 +14,56 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
     #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
+    TEXTURE3D(_CloudNoise3DTextureA);
+    TEXTURE3D(_CloudNoise3DTextureB);
+    float4 _CloudScale;
+    #include "./CloudScapes.hlsl"
+    #include "./VolumetricLightUtils.hlsl"
+
+    // TEXTURE2D(_CameraColorTexture);
     TEXTURE2D(_CameraDepthTexture); SAMPLER(sampler_CameraDepthTexture);
     TEXTURE2D(_BlueNoiseTexture);
+
+    
 
     int _BoundaryPlanesCount;
     float4 _BoundaryPlanes[6]; // Ax + By + Cz + D = 0; _BoundaryPlane[i] = (A, B, C, D); normal = (A, B, C)
     int _Steps;
-
-    float _DirLightDistance;
+    
     float4 _LightPosition;
     float4 _LightDirection;
     float4 _LightColor;
     float _LightCosHalfAngle;
-    int  _UseShadow;
+    int  _ApplyShadow;
     int _ShadowLightIndex;
 
-    float _TransmittanceExtinction;
-    float _IncomingLoss; // 光线到x处剩余的能量
-    float _HGFactor; // _HGFactor影响散射光在顺光或逆光方向上的相对强度，取值范围[-1, 1]，1在逆光上最强。
-    float _Absorption;
+    float4 _ScatteringExtinction;
+    float4 _EmissionPhaseG;
+    
     float4 _RenderExtent;
     float4 _BlueNoiseTexture_TexelSize;
 
     float4 _CameraPackedInfo;
-
-    float _BrightIntensity;
-    float _DarkIntensity;
+    
+    float _ShadowIntensity;
 
     #define TAN_FOV_VERTICAL _CameraPackedInfo.x
     #define TAN_FOV_HORIZONTAL _CameraPackedInfo.y
+
+    #define Scattering _ScatteringExtinction.xyz
+    #define Extinction _ScatteringExtinction.w
+
+    #define Emission _EmissionPhaseG.xyz
+    #define PhaseG _EmissionPhaseG.w
+
+    #define DensityScale _DensityScaleAndFlowSpeed.xyz
+    #define DensityFlowSpeed _DensityScaleAndFlowSpeed.w
+
+    #define DensityIntensity _DensityIntensityAndHeightAttenuation.x
+    #define DensityHeightAttenuation _DensityIntensityAndHeightAttenuation.y
+
+    #define SampleAccumulatedCloudDensityStepCount 6
+    #define SampleAccumulatedCloudDensityDistance 6
 
     struct Attributes
     {
@@ -105,13 +126,42 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
         // return linearDepth * length(ray);
     }
 
-    //介质中x处的消光系数（吸收和外散射事件），k为风格化系数
-    float extinctionAt(float3 pos, float k)
+    //噪声
+    float SampleNoise(float3 positionWS)
     {
-        //假设介质均匀
-        return k * _TransmittanceExtinction;
+        float noise = 0;
+
+        float2 noise2DUV = float2(positionWS.xz);
+        noise2DUV += _Time.y;
+        noise += SAMPLE_TEXTURE2D(_Noise2DTextureA, sampler_LinearRepeat, noise2DUV) * 0.55;
+
+        float3 noise3DUV = positionWS;
+        noise3DUV += _Time.y;
+        noise += SAMPLE_TEXTURE2D(_Noise3DTextureA, sampler_LinearRepeat, noise3DUV) * 0.25;
+    }
+
+    //介质中x处的消光系数（吸收和外散射事件），k为风格化系数
+    float extinctionAt(float3 positionWS, float density)
+    {
+        return Extinction * density;
         //也可以采样3D Texture代表非均匀介质
         //也可以基于解析函数实时计算
+    }
+
+    //参与介质的密度越大，其中的粒子就越多，更多的粒子就会导致更多的散射
+    float3 scatteringAt(float3 positionWS, float density)
+    {
+        return Scattering * density;
+    }
+
+    float phaseGAt(float3 positionWS, float density)
+    {
+        return PhaseG;
+    }
+
+    float3 emissionAt(float3 positionWS, float density)
+    {
+        return Emission;
     }
     
     float SpotLightRealtimeShadow(int lightIndex, float3 positionWS)
@@ -132,57 +182,101 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
     //返回1表示没有阴影，0表示完全在阴影中
     float shadowAt(float3 positionWS)
     {
+        if(_ApplyShadow == 0)
+        {
+            return 1;
+        }
         return SpotLightRealtimeShadow(_ShadowLightIndex, positionWS);
     }
 
-    //返回介质中x处接收到的光线（RGB），以及x处到光源的方向
-    float3 lightAt(float3 pos, out float3 lightDir)
+    //PhaseFunction，给定入射光线方向，根据概率分布，计算指定方向上的散射光线RGB，体积积分总是为1
+    float3 Phase(float3 lightDir, float3 viewDir, float3 positionWS, float density)
+    {
+        // 采用Henyey-Greenstein phase function(即HG Phase)模拟米氏散射，即介质中微粒与入射光线波长的相对大小接近相等，模拟丁达尔效应时的情况
+        float phaseG = phaseGAt(positionWS, density);
+        return ( 1 - phaseG * phaseG) / ( 4 * PI * pow(1 + phaseG * phaseG- 2 * phaseG * dot(viewDir, lightDir) , 1.5));
+    }
+
+    //为了实现云的自阴影，需要从步进点向光源方向二次步进累积，计算positionWS接收到来自光源的irradiance，虽然费，但是效果好。
+    float SampleAccumulatedCloudIrradiance(float3 positionWS, float3 lightDir, float3 viewDir)
+    {
+        float stepSize = SampleAccumulatedCloudDensityDistance / SampleAccumulatedCloudDensityStepCount;
+        float cloudIrradianceMultiDepth = 0;
+        for(int i = 0; i < SampleAccumulatedCloudDensityStepCount; i++)
+        {
+            float3 pos = positionWS + lightDir * stepSize * i;
+            cloudIrradianceMultiDepth += extinctionAt(positionWS, SampleCloudDensity(pos)) * stepSize;
+        }
+
+        //只有当视线和光源方向一致时我们才使用BeerPowder
+        //另外这里其实没有做到能量守恒，代码并不严谨
+        if(dot(_LightDirection.xyz, viewDir) > 0)
+        {
+            return BeerPowder(cloudIrradianceMultiDepth, SampleAccumulatedCloudDensityDistance);
+        }
+        else
+        {
+            return BeerLambert(cloudIrradianceMultiDepth, SampleAccumulatedCloudDensityDistance);
+        }
+    }
+
+    //可见性函数v，代表从光源位置到达采样点positionWS的比例
+    float GetLightVisible(float3 positionWS, float3 lightDir, float3 viewDir)
+    {
+        //聚光灯衰减项
+        float spotAttenuation = step(_LightCosHalfAngle, dot(lightDir, _LightDirection.xyz));
+        //shadowmap阴影
+        float shadowmapAttenuation = shadowAt(positionWS);
+        //考虑体积阴影项，从光源到采样点的透光率Transmittance
+        float transmittance = SampleAccumulatedCloudIrradiance(positionWS, lightDir, viewDir);
+        //不考虑体积阴影项（即使是聚光灯，我们暂时也先不考虑距离衰减）
+        // float transmittance = BeerLambert(extinctionAt(positionWS, 1), SampleAccumulatedCloudDensityDistance);
+
+        return spotAttenuation * shadowmapAttenuation * transmittance;
+    }
+
+    //返回介质中x处接收到的光线（RGB）
+    float3 scatteredLight(float3 positionWS, float3 viewDir, float density)
     {
         //_LightPosition.w = 0时，为方向光，此时_LightPosition.xyx为方向光dir
         //_LightPosition.w = 1时，为SpotLight
-        lightDir = normalize(_LightPosition.xyz - pos * _LightPosition.w);
-        float lightDistance = lerp(_DirLightDistance, distance(_LightPosition.xyz, pos), _LightPosition.w);
-        //从光源到介质中x处的透射率，这里假设介质中x处到光源为均匀介质
-        float transmittance = lerp(1, exp(-lightDistance * extinctionAt(pos, _BrightIntensity)), _IncomingLoss);
+        float3 lightDir = normalize(_LightPosition.xyz - positionWS * _LightPosition.w);
+        //考虑Phase Function、可见性函数v、光源强度
+        float3 radiance = PI * Phase(-lightDir, -viewDir, positionWS, density) * GetLightVisible(positionWS, lightDir, viewDir) * _LightColor.rgb;
+        //考虑自发光、风格化_ShadowIntensity
+        radiance += emissionAt(positionWS, density) * step(_LightCosHalfAngle, dot(lightDir, _LightDirection.xyz));
+        // radiance = radiance + emissionAt(positionWS, density) * spotAttenuation - (1 - shadowAt(positionWS)) * _ShadowIntensity;
 
-        float3 lightColor = _LightColor.rgb;
-        //考虑光源方向与片元到光源方向之间夹角的能量损失
-        lightColor *= step(_LightCosHalfAngle, dot(lightDir, _LightDirection.xyz));
-        //考虑阴影
-        lightColor *= shadowAt(pos);
-        //透射率造成的衰减
-        lightColor *= transmittance;
-        //散射系数=消光系数-吸收系数，但这里参数简化为比例，即散射系数=消光系数*(1 - _Absorption)
-        lightColor *= extinctionAt(pos, _BrightIntensity) * (1 - _Absorption);
-        //风格化亮部
-        lightColor *= _BrightIntensity;
-
-        return lightColor;
+        return radiance;
     }
 
-    //PhaseFunction，给定入射光线方向，根据概率分布，计算指定方向上的散射光线RGB，体积积分总是为1
-    float3 Phase(float3 lightDir, float3 viewDir)
+    //Ray-marching
+    float4 scattering(float3 ray, float near, float far)
     {
-        // 采用Henyey-Greenstein phase function(即HG Phase)模拟米氏散射，即介质中微粒与入射光线波长的相对大小接近相等，模拟丁达尔效应时的情况
-        return ( 1 - _HGFactor * _HGFactor) / ( 4 * PI * pow(1 + _HGFactor * _HGFactor- 2 * _HGFactor * dot(viewDir, lightDir) , 1.5));
-    }
-
-    float3 scattering(float3 ray, float near, float far, out float3 transmittance)
-    {
-        transmittance = 1;
-        float3 totalLight = 0;
+        float3 totalRadiance = 0;
+        float totalTransmittance = 1.0;
         float stepSize = (far - near) / _Steps;
         // [UNITY_LOOP]
-        for(int i= 1; i <= _Steps; i++)
+        for(int i = 0; i < _Steps; i++)
         {
             float3 pos = _WorldSpaceCameraPos + ray * (near + stepSize * i);
-            //从介质中x处到视点的消光系数，采用累乘避免多次积分
-            transmittance *= exp(-stepSize * extinctionAt(pos, _DarkIntensity));
+            float density = SampleCloudDensity(pos)  * step(_LightCosHalfAngle, dot(normalize(_LightPosition.xyz - pos * _LightPosition.w), _LightDirection.xyz));
+            //dx的消光系数
+            float transmittance = BeerLambert(extinctionAt(pos, density), stepSize);
             
-            float3 lightDir;
-            totalLight += transmittance * lightAt(pos, lightDir) * stepSize * Phase(lightDir, -ray);
+            //参考SIGGRAPH2015 Frosbite PB and unified volumetrics中对积分式进行了一定求解。
+            //Scattering评估成本太高，可以认为dx内为定值，即常数。
+            //认为dx内Transmittance不是定值，因此将Transmittance在0~D上的积分求解，让Transmittance随dx连续变化，使计算结果更加接近正确值。
+            float3 scattering =  scatteringAt(pos, density) * scatteredLight(pos, ray, density) * (1 - transmittance) / max(extinctionAt(pos, density), 0.00001f);
+            totalRadiance += scattering * totalTransmittance;
+            
+            //如果按照RTR4的积分式积分，此时对于stepSize这段距离，认为其中的totalTransmittance是一个定值，这是不合理的，因此不直接使用积分式累积。
+            // totalRadiance +=  totalTransmittance * scatteredLight(pos, ray, density) * scatteringAt(pos, density) * stepSize;
+            
+            totalTransmittance *= transmittance;
         }
-        return totalLight;
+        
+        return float4(totalRadiance, totalTransmittance);
     }
 
     Varyings volumetricLightVert(Attributes input)
@@ -236,25 +330,21 @@ Shader "Hidden/RecaNoMaho/VolumetricLight"
         farIntersect -= offset;
 
         //Ray Marching!!
-        float3 transmittance = 1;
-        float3 color = 0;
-        color = scattering(viewRay, nearIntersect, farIntersect, transmittance);
-        
-        return float4(color, 1);
+        float4 color = scattering(viewRay, nearIntersect, farIntersect);
+
+        return color;
     }
     ENDHLSL
     
     SubShader
     {
-        UsePass "Hidden/Universal Render Pipeline/Blit/Blit"
-        
         Pass 
         {
-            Name "Volumetric Light Spot" // 1
+            Name "Volumetric Light Spot" // Pass 0
             ZTest Off
             ZWrite Off
-            Cull Off
-            Blend One One
+            Cull Front
+            Blend One SrcAlpha
             
             HLSLPROGRAM
 

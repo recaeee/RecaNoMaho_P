@@ -1,0 +1,60 @@
+#pragma kernel Main
+
+RWStructuredBuffer<float4> _Colors;
+RWTexture2D<float4> _Texture2D;
+RWTexture3D<float4> _Texture3D;
+
+int _Resolution;
+bool _Is3D;
+bool _RemapTo01;
+bool _Invert;
+bool _ChangeContrast;
+float _Contrast;
+
+float _MinValue;
+float _MaxValue;
+
+[numthreads(16,16,1)]
+void Main(uint3 id : SV_DispatchThreadID)
+{
+	int colorIndex = id.x;
+    colorIndex += _Resolution * id.y;
+    colorIndex += _Resolution * _Resolution * id.z;
+
+    if(_Is3D) {
+        if(colorIndex >= _Resolution * _Resolution * _Resolution) {
+            return;
+        }
+    }
+    else {
+        if(colorIndex >= _Resolution * _Resolution) {
+            return;
+        }
+    }
+
+    float noise = _Colors[colorIndex].r;
+
+    if(_RemapTo01) {
+        noise = (noise - _MinValue) / (_MaxValue - _MinValue);
+    }
+
+    noise = saturate(noise);
+
+    if(_Invert) {
+        noise = 1 - noise;
+    }
+
+    if(_ChangeContrast) {
+        noise = lerp(0.5, noise, _Contrast);
+        noise = saturate(noise);
+    }
+
+    _Colors[colorIndex] = noise;
+
+    if(_Is3D) {
+        _Texture3D[id.xyz] = float4(noise, noise, noise, 1);
+    }
+    else {
+        _Texture2D[id.xy] = float4(noise, noise, noise, 1);
+    }
+}

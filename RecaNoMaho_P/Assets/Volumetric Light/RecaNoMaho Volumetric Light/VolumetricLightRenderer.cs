@@ -9,23 +9,27 @@ namespace RecaNoMaho
     [RequireComponent(typeof(Light))]
     public class LightVolumeRenderer : MonoBehaviour
     {
-        [Header("体积光基础参数")]
+        [Header("体积光质量")]
         public bool stepOverride = false;
         [Tooltip("Ray Marching的步进次数")][Range(0, 64)] public int rayMarchingSteps = 8;
+        [Tooltip("是否采样阴影贴图")] public bool applyShadow = true;
 
-        [Tooltip("控制入射光线在经过介质时的衰减")][Range(0f, 1f)] public float inComingLoss = 0;
-        [Tooltip("（仅对方向光源生效）")]public float dirLightDistance = 100;
-        public bool extinctionOverride = false;
-        [Tooltip("体积光的可见距离(影响介质透射率)")][Range(0.01f, 50f)]public float visibilityDistance = 50;
-        [Tooltip("吸收系数（非严格按照公式）")] [Range(0, 1)] public float absorption = 0.1f;
+        [Header("参与介质材质")]
+        public bool mediaOverride = false;
+
+        [Tooltip("反照率Albedo")] public Color albedo = Color.white;
+        [Tooltip("消光系数Extinction")][Min(0.00001f)] public float extinction = 0.3f;
+        [Tooltip("各向异性Phase g")] [Range(-1f, 1f)]
+        public float phaseG = -0.5f;
+        [Tooltip("自发光Emission")][ColorUsage(true, true)] public Color emission = Color.black;
         
-        [Tooltip("控制光源强度的系数")][Range(0f, 2f)]public float intensityMultiplier = 1;
+        [Header("聚光灯参数")]
+        [Tooltip("控制光源强度的系数")][Range(0f, 10f)]public float intensityMultiplier = 1;
 
         [Header("风格化参数")]
-        [Tooltip("体积光亮部强度")] [Range(0f, 10f)] public float brightIntensity = 1;
-        [Tooltip("体积光暗部强度")] [Range(0f, 10f)] public float darkIntentsity = 1;
+        [Tooltip("体积光暗部强度")] [Range(0f, 1f)] public float shadowIntensity = 1;
 
-        public Light light { get; private set; }
+        public Light appliedLight { get; private set; }
         public Mesh volumeMesh { get; private set; }
         
         //存储前一帧的lightAngle和range，在其改动时更新Mesh
@@ -33,8 +37,7 @@ namespace RecaNoMaho
         //Volume Bound Faces
         private List<Vector4> planes = new List<Vector4>(6);
 
-        private bool isSpotLight => light.type == LightType.Spot;
-        private bool isDirectionalLight => light.type == LightType.Directional;
+        private bool isSpotLight => appliedLight.type == LightType.Spot;
 
         private void OnDrawGizmosSelected()
         {
@@ -44,11 +47,11 @@ namespace RecaNoMaho
 
         private void Awake()
         {
-            light = GetComponent<Light>();
+            appliedLight = GetComponent<Light>();
             volumeMesh = new Mesh();
             Reset();
-            previousAngle = light.spotAngle;
-            previousRange = light.range;
+            previousAngle = appliedLight.spotAngle;
+            previousRange = appliedLight.range;
         }
 
         private void Update()
@@ -57,6 +60,17 @@ namespace RecaNoMaho
             {
                 UpdateMesh();
             }
+        }
+        
+        public Vector4 GetScatteringExtinction()
+        {
+            // scattering = albedo * extinction = (scattering / extinction) * extinction
+            return new Vector4(albedo.r * extinction, albedo.g * extinction, albedo.b * extinction, extinction);
+        }
+
+        public Vector4 GetEmissionPhaseG()
+        {
+            return new Vector4(emission.r, emission.g, emission.b, phaseG);
         }
 
         public List<Vector4> GetVolumeBoundFaces(Camera camera)
@@ -67,9 +81,9 @@ namespace RecaNoMaho
             if (isSpotLight)
             {
                 //光源视角的VP矩阵
-                lightViewProjection = Matrix4x4.Perspective(light.spotAngle, 1, 0.03f, light.range)
+                lightViewProjection = Matrix4x4.Perspective(appliedLight.spotAngle, 1, 0.03f, appliedLight.range)
                                  * Matrix4x4.Scale(new Vector3(1, 1, -1))
-                                 * light.transform.worldToLocalMatrix;
+                                 * appliedLight.transform.worldToLocalMatrix;
                 var m0 = lightViewProjection.GetRow(0);
                 var m1 = lightViewProjection.GetRow(1);
                 var m2 = lightViewProjection.GetRow(2);
@@ -81,13 +95,6 @@ namespace RecaNoMaho
                 planes.Add(-(m3 - m1));
                 // planes.Add( -(m3 + m2)); // ignore near
                 planes.Add(-(m3 - m2));
-            }
-            else if (isDirectionalLight)
-            {
-                lightViewProjection = camera.projectionMatrix * camera.worldToCameraMatrix; // why camera?
-                var m2 = lightViewProjection.GetRow(2);
-                var m3 = lightViewProjection.GetRow(3);
-                planes.Add(-(m3 + m2)); // near plane only
             }
 
             return planes;
@@ -123,15 +130,15 @@ namespace RecaNoMaho
         {
             if (isSpotLight)
             {
-                var tanFov = Mathf.Tan(light.spotAngle / 2 * Mathf.Deg2Rad);
+                var tanFov = Mathf.Tan(appliedLight.spotAngle / 2 * Mathf.Deg2Rad);
                 //模型空间下Spot Light的有效锥体范围
                 var verts = new Vector3[]
                 {
                     new Vector3(0, 0, 0),
-                    new Vector3(-tanFov, -tanFov, 1) * light.range,
-                    new Vector3(-tanFov, tanFov, 1) * light.range,
-                    new Vector3(tanFov, tanFov, 1) * light.range,
-                    new Vector3(tanFov, -tanFov, 1) * light.range,
+                    new Vector3(-tanFov, -tanFov, 1) * appliedLight.range,
+                    new Vector3(-tanFov, tanFov, 1) * appliedLight.range,
+                    new Vector3(tanFov, tanFov, 1) * appliedLight.range,
+                    new Vector3(tanFov, -tanFov, 1) * appliedLight.range,
                 };
                 volumeMesh.Clear();
                 volumeMesh.vertices = verts;
@@ -146,20 +153,15 @@ namespace RecaNoMaho
                 };
                 volumeMesh.RecalculateNormals();
                 
-                previousAngle = light.spotAngle;
-                previousRange = light.range;
+                previousAngle = appliedLight.spotAngle;
+                previousRange = appliedLight.range;
             }
         }
 
         private bool IsDirty()
         {
-            return !Mathf.Approximately(light.spotAngle, previousAngle) ||
-                   !Mathf.Approximately(light.range, previousRange);
-        }
-        
-        public float GetExtinction()
-        {
-            return Mathf.Log(10f) / visibilityDistance;
+            return !Mathf.Approximately(appliedLight.spotAngle, previousAngle) ||
+                   !Mathf.Approximately(appliedLight.range, previousRange);
         }
     }
 }

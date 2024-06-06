@@ -1,0 +1,277 @@
+#pragma kernel Main
+
+#include "../Base/NoiseLibrary.hlsl"
+
+struct Pixel {
+    int3 coord;
+
+    float3 centerPoint_middle;
+    float3 neighborPoint0_middle;
+    float3 neighborPoint1_middle;
+    float3 neighborPoint2_middle;
+    float3 neighborPoint3_middle;
+    float3 neighborPoint4_middle;
+    float3 neighborPoint5_middle;
+    float3 neighborPoint6_middle;
+    float3 neighborPoint7_middle;
+
+    float3 centerPoint_near;
+    float3 neighborPoint0_near;
+    float3 neighborPoint1_near;
+    float3 neighborPoint2_near;
+    float3 neighborPoint3_near;
+    float3 neighborPoint4_near;
+    float3 neighborPoint5_near;
+    float3 neighborPoint6_near;
+    float3 neighborPoint7_near;
+
+    float3 centerPoint_far;
+    float3 neighborPoint0_far;
+    float3 neighborPoint1_far;
+    float3 neighborPoint2_far;
+    float3 neighborPoint3_far;
+    float3 neighborPoint4_far;
+    float3 neighborPoint5_far;
+    float3 neighborPoint6_far;
+    float3 neighborPoint7_far;
+};
+
+RWStructuredBuffer<float4> _Colors;
+RWTexture2D<float4> _Texture2D;
+RWTexture3D<float4> _Texture3D;
+
+int _Resolution;
+float _Frequency;
+bool _Is3D;
+bool _IsTilable;
+float _RandomSeed;
+float3 _Evolution;
+int _FBMIteration;
+int _ReturnType;
+
+float GetDistance(float3 vec0, float3 vec1) {
+    float3 vec = vec0 - vec1;
+    float dist ;
+
+    if(_ReturnType == 0 || _ReturnType == 2) {
+        dist = length(vec);
+    }
+    else {
+        vec = pow(abs(vec), 3.0);
+        dist = pow(vec.x + vec.y + vec.z, 1.0 / 3.0);
+    }
+
+    return dist;
+}
+
+float3 GetRandomPoint(int blockNumber, int blockSize, int3 blockCoord, float randomSeed) {
+    int3 blockMin = GetBlockMin(blockSize, blockCoord);
+
+    if (_IsTilable) {
+        if (blockCoord.x == blockNumber - 2)
+            blockCoord.x = -2;
+        if (blockCoord.y == blockNumber - 2)
+            blockCoord.y = -2;
+        if (blockCoord.z == blockNumber - 2)
+            blockCoord.z = -2;
+
+        if (blockCoord.x == blockNumber - 1)
+            blockCoord.x = -1;
+        if (blockCoord.y == blockNumber - 1)
+            blockCoord.y = -1;
+        if (blockCoord.z == blockNumber - 1)
+            blockCoord.z = -1;
+
+        if (blockCoord.x == blockNumber)
+            blockCoord.x = 0;
+        if (blockCoord.y == blockNumber)
+            blockCoord.y = 0;
+        if (blockCoord.z == blockNumber)
+            blockCoord.z = 0;
+    }
+
+    float3 randomNumber = GetRandom3To3_Remapped(blockCoord + _Evolution, length(blockCoord) * randomSeed);
+    int3 pnt;
+    pnt.x = round(lerp(0, blockSize, randomNumber.x));
+    pnt.y = round(lerp(0, blockSize, randomNumber.y));
+    pnt.z = round(lerp(0, blockSize, randomNumber.z));
+
+    pnt += blockMin;
+
+    return pnt;
+}
+
+float GetNoiseValue(uint3 id, float tile, float randomSeed){
+    int blockNumber = ceil(tile);
+
+    int blockSize = ceil((float)_Resolution / blockNumber);
+
+    Pixel pixel = (Pixel)0;
+    pixel.coord = id.xyz;
+
+    int3 blockCoord = PixelCoordToBlockCoord(blockSize, pixel.coord);
+
+    pixel.centerPoint_middle = GetRandomPoint(blockNumber, blockSize, blockCoord, randomSeed);
+    pixel.neighborPoint0_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 0, 0), randomSeed);
+    pixel.neighborPoint1_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 1, 0), randomSeed);
+    pixel.neighborPoint2_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, 1, 0), randomSeed);
+    pixel.neighborPoint3_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 1, 0), randomSeed);
+    pixel.neighborPoint4_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 0, 0), randomSeed);
+    pixel.neighborPoint5_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, -1, 0), randomSeed);
+    pixel.neighborPoint6_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, -1, 0), randomSeed);
+    pixel.neighborPoint7_middle = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, -1, 0), randomSeed);
+
+    if (_Is3D) {
+        pixel.centerPoint_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, 0, -1), randomSeed);
+        pixel.neighborPoint0_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 0, -1), randomSeed);
+        pixel.neighborPoint1_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 1, -1), randomSeed);
+        pixel.neighborPoint2_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, 1, -1), randomSeed);
+        pixel.neighborPoint3_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 1, -1), randomSeed);
+        pixel.neighborPoint4_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 0, -1), randomSeed);
+        pixel.neighborPoint5_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, -1, -1), randomSeed);
+        pixel.neighborPoint6_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, -1, -1), randomSeed);
+        pixel.neighborPoint7_near = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, -1, -1), randomSeed);
+
+        pixel.centerPoint_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, 0, 1), randomSeed);
+        pixel.neighborPoint0_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 0, 1), randomSeed);
+        pixel.neighborPoint1_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, 1, 1), randomSeed);
+        pixel.neighborPoint2_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, 1, 1), randomSeed);
+        pixel.neighborPoint3_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 1, 1), randomSeed);
+        pixel.neighborPoint4_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, 0, 1), randomSeed);
+        pixel.neighborPoint5_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(1, -1, 1), randomSeed);
+        pixel.neighborPoint6_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(0, -1, 1), randomSeed);
+        pixel.neighborPoint7_far = GetRandomPoint(blockNumber, blockSize, blockCoord + int3(-1, -1, 1), randomSeed);
+    }
+
+
+
+
+    float distances[27];
+
+    distances[0] = GetDistance(pixel.coord, pixel.centerPoint_middle);
+    distances[1] = GetDistance(pixel.coord, pixel.neighborPoint0_middle);
+    distances[2] = GetDistance(pixel.coord, pixel.neighborPoint1_middle);
+    distances[3] = GetDistance(pixel.coord, pixel.neighborPoint2_middle);
+    distances[4] = GetDistance(pixel.coord, pixel.neighborPoint3_middle);
+    distances[5] = GetDistance(pixel.coord, pixel.neighborPoint4_middle);
+    distances[6] = GetDistance(pixel.coord, pixel.neighborPoint5_middle);
+    distances[7] = GetDistance(pixel.coord, pixel.neighborPoint6_middle);
+    distances[8] = GetDistance(pixel.coord, pixel.neighborPoint7_middle);
+
+    if(_Is3D) {
+        distances[9] = GetDistance(pixel.coord, pixel.centerPoint_near);
+        distances[10] = GetDistance(pixel.coord, pixel.neighborPoint0_near);
+        distances[11] = GetDistance(pixel.coord, pixel.neighborPoint1_near);
+        distances[12] = GetDistance(pixel.coord, pixel.neighborPoint2_near);
+        distances[13] = GetDistance(pixel.coord, pixel.neighborPoint3_near);
+        distances[14] = GetDistance(pixel.coord, pixel.neighborPoint4_near);
+        distances[15] = GetDistance(pixel.coord, pixel.neighborPoint5_near);
+        distances[16] = GetDistance(pixel.coord, pixel.neighborPoint6_near);
+        distances[17] = GetDistance(pixel.coord, pixel.neighborPoint7_near);
+
+        distances[18] = GetDistance(pixel.coord, pixel.centerPoint_far);
+        distances[19] = GetDistance(pixel.coord, pixel.neighborPoint0_far);
+        distances[20] = GetDistance(pixel.coord, pixel.neighborPoint1_far);
+        distances[21] = GetDistance(pixel.coord, pixel.neighborPoint2_far);
+        distances[22] = GetDistance(pixel.coord, pixel.neighborPoint3_far);
+        distances[23] = GetDistance(pixel.coord, pixel.neighborPoint4_far);
+        distances[24] = GetDistance(pixel.coord, pixel.neighborPoint5_far);
+        distances[25] = GetDistance(pixel.coord, pixel.neighborPoint6_far);
+        distances[26] = GetDistance(pixel.coord, pixel.neighborPoint7_far);
+    }
+
+    float closestDistance0 = 999999;
+    float closestDistance1 = 999999;
+    float closestDistance2 = 999999;
+
+    if(_Is3D) {
+        for(int iii = 0; iii < 27; iii++) {
+            float tempDistance = distances[iii];
+
+            if(tempDistance < closestDistance0) {
+                closestDistance2 = closestDistance1;
+                closestDistance1 = closestDistance0;
+                closestDistance0 = tempDistance;
+            }
+            else if(tempDistance < closestDistance1) {
+                closestDistance2 = closestDistance1;
+                closestDistance1 = tempDistance;
+            }
+            else if(tempDistance < closestDistance2) {
+                closestDistance2 = tempDistance;
+            }
+        }
+    }
+    else {
+        for(int iii = 0; iii < 9; iii++) {
+            float tempDistance = distances[iii];
+
+            if(tempDistance < closestDistance0) {
+                closestDistance2 = closestDistance1;
+                closestDistance1 = closestDistance0;
+                closestDistance0 = tempDistance;
+            }
+            else if(tempDistance < closestDistance1) {
+                closestDistance2 = closestDistance1;
+                closestDistance1 = tempDistance;
+            }
+            else if(tempDistance < closestDistance2) {
+                closestDistance2 = tempDistance;
+            }
+        }
+    }
+
+    float noise;
+    
+    if(_ReturnType == 0 || _ReturnType == 1) {
+        noise = closestDistance0;
+        noise /= blockSize;
+    }
+    else {
+        noise = closestDistance1 - closestDistance0;
+        noise /= blockSize;
+    }
+
+    return noise;
+}
+
+[numthreads(16,16,1)]
+void Main(uint3 id : SV_DispatchThreadID)
+{
+    int colorIndex = id.x;
+    colorIndex += _Resolution * id.y;
+    colorIndex += _Resolution * _Resolution * id.z;
+
+    if(_Is3D) {
+        if(colorIndex >= _Resolution * _Resolution * _Resolution) {
+            return;
+        }
+    }
+    else {
+        if(colorIndex >= _Resolution * _Resolution) {
+            return;
+        }
+    }
+
+    float noise = GetNoiseValue(id, _Frequency, _RandomSeed);
+
+    float currentTile = _Frequency;
+    float currentStrength = 1;
+    for(int iii = 0; iii < _FBMIteration; iii++) {
+        currentTile *= 2;
+        currentStrength /= 2;
+        if(currentTile >= _Resolution) {
+            currentTile /= 2;
+        }
+        noise += GetNoiseValue(id, currentTile, _RandomSeed + currentTile) * currentStrength;
+    }
+    
+    _Colors[colorIndex] = float4(noise, noise, noise, 1);
+
+    if(_Is3D) {
+        _Texture3D[id.xyz] = float4(noise, noise, noise, 1);
+    }
+    else {
+        _Texture2D[id.xy] = float4(noise, noise, noise, 1);
+    }
+}

@@ -1,0 +1,82 @@
+#pragma kernel PackingTexturesRGBA
+#pragma kernel PackingTexturesRGB
+
+Texture2D<float4> _2DRChannel;
+Texture2D<float4> _2DGChannel;
+Texture2D<float4> _2DBChannel;
+Texture2D<float4> _2DAChannel;
+
+Texture3D<float4> _3DRChannel;
+Texture3D<float4> _3DGChannel;
+Texture3D<float4> _3DBChannel;
+Texture3D<float4> _3DAChannel;
+
+RWStructuredBuffer<float4> _Colors;
+int _ResolutionX;
+int _ResolutionY;
+int _ResolutionZ;
+bool _Is3D;
+
+[numthreads(16,16,1)]
+void PackingTexturesRGBA (uint3 id : SV_DispatchThreadID)
+{
+    int colorIndex = id.x;
+    colorIndex += _ResolutionX * id.y;
+    colorIndex += _ResolutionX * _ResolutionY * id.z;
+
+    if(_Is3D)
+    {
+        if(colorIndex >= _ResolutionX * _ResolutionY * _ResolutionZ)
+        {
+            return;
+        }
+    }
+    else
+    {
+        if(colorIndex >= _ResolutionX * _ResolutionY)
+        {
+            return;
+        }
+    }
+
+    if(_Is3D)
+    {
+        _Colors[colorIndex] = float4(_3DRChannel[id.xyz].r, _3DGChannel[id.xyz].r, _3DBChannel[id.xyz].r, _3DAChannel[id.xyz].r);
+    }
+    else
+    {
+        _Colors[colorIndex] = float4(_2DRChannel[id.xy].r, _2DGChannel[id.xy].r, _2DBChannel[id.xy].r, _2DAChannel[id.xy].r);
+    }
+}
+
+[numthreads(16,16,1)]
+void PackingTexturesRGB (uint3 id : SV_DispatchThreadID)
+{
+    int colorIndex = id.x;
+    colorIndex += _ResolutionX * id.y;
+    colorIndex += _ResolutionX * _ResolutionY * id.z;
+
+    if(_Is3D)
+    {
+        if(colorIndex >= _ResolutionX * _ResolutionY * _ResolutionZ)
+        {
+            return;
+        }
+    }
+    else
+    {
+        if(colorIndex >= _ResolutionX * _ResolutionY)
+        {
+            return;
+        }
+    }
+
+    if(_Is3D)
+    {
+        _Colors[colorIndex] = float4(_3DRChannel[id.xyz].r, _3DGChannel[id.xyz].r, _3DBChannel[id.xyz].r, 0);
+    }
+    else
+    {
+        _Colors[colorIndex] = float4(_2DRChannel[id.xy].r, _2DGChannel[id.xy].r, _2DBChannel[id.xy].r, 0);
+    }
+}

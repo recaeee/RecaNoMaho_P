@@ -11,16 +11,40 @@ namespace RecaNoMaho
         [Serializable]
         public class GlobalParams
         {
+            [Header("体积光质量")]
             [Tooltip("Volumetic Light RT Scale")] [Range(0.01f, 2)] public float renderScale = 1f;
             [Tooltip("Ray Marching步进次数")][Range(0, 64)] public int steps = 8;
-            [Tooltip("体积光的可见距离(影响介质透射率)")][Range(0.01f, 50f)] public float visibilityDistance = 50;
-            [Tooltip("吸收系数（非严格按照公式）")] [Range(0, 1)] public float absorption = 0.1f;
-            [Tooltip("散射光在顺光或逆光方向上的相对强度，取值范围[-1, 1]，1在逆光上最强")] [Range(-1f, 1f)] public float HGFactor;
+
+            [Header("全局参与介质材质")]
+            [Tooltip("反照率Albedo")] public Color albedo = new Color(0.8f, 0.8f,0.8f);
+            [Tooltip("消光系数Extinction")] public float extinction = 0.3f;
+            [Tooltip("各向异性Phase g")] [Range(-1f, 1f)]
+            public float phaseG = -0.5f;
+            [Tooltip("自发光Emission")][ColorUsage(true, true)] public Color emission = Color.black;
+            
+            [Header("Jitter Sampling")]
             [Tooltip("每帧采样不同的BlueNoiseTexture做抖动采样，优化采样次数")]
             public List<Texture2D> blueNoiseTextures;
-            public float GetExtinction()
+
+            [Header("云层模拟")] 
+            [Tooltip("基本形状与细节")] public Texture3D cloudNoise3DTextureA;
+            [Tooltip("边缘侵蚀")] public Texture3D cloudNoise3DTextureB;
+            public Vector3 cloudScale = new Vector3(1f, 1f, 1f);
+            [Tooltip("雾的Clip参数")] [Range(0f, 1f)] public float densityClip = 0f;
+            [Tooltip("云层范围")] public Vector4 inCloudMin = new Vector4(-100, 0, -100, 0);
+            public Vector4 inCloudMax = new Vector4(100, 100, 100, 0);
+            [Tooltip("云流速度")] public Vector4 cloudFlowSpeed = new Vector4(1, 1, 1, 0);
+            [Tooltip("云层覆盖图")] public Texture2D weatherDataTexture;
+            
+            public Vector4 GetScatteringExtinction()
             {
-                return Mathf.Log(10f) / visibilityDistance;
+                float nonNegativeExtinction = Mathf.Max(0f, extinction);
+                return new Vector4(albedo.r * nonNegativeExtinction, albedo.g * nonNegativeExtinction, albedo.b * nonNegativeExtinction, nonNegativeExtinction);
+            }
+            
+            public Vector4 GetEmissionPhaseG()
+            {
+                return new Vector4(emission.r, emission.g, emission.b, phaseG);
             }
         }
 
@@ -30,7 +54,6 @@ namespace RecaNoMaho
         public override void Create()
         {
             volumetricLightRenderPass = new VolumetricLightRenderPass();
-
             volumetricLightRenderPass.renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
         }
         
@@ -39,30 +62,6 @@ namespace RecaNoMaho
             if (volumetricLightRenderPass.Setup(ref renderingData, globalParams))
             {
                 renderer.EnqueuePass(volumetricLightRenderPass);
-            }
-        }
-
-        private void OnDestroy()
-        {
-            if (volumetricLightRenderPass != null)
-            {
-                volumetricLightRenderPass.Cleanup();
-            }
-        }
-
-        private void OnDisable()
-        {
-            if (volumetricLightRenderPass != null)
-            {
-                volumetricLightRenderPass.Cleanup();
-            }
-        }
-
-        private void OnValidate()
-        {
-            if (volumetricLightRenderPass != null)
-            {
-                volumetricLightRenderPass.Cleanup();
             }
         }
     }

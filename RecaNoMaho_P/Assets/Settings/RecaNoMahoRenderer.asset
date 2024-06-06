@@ -113,8 +113,10 @@ MonoBehaviour:
   globalParams:
     renderScale: 1
     steps: 8
-    visibilityDistance: 20
-    HGFactor: -0.5
+    albedo: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+    extinction: 0.3
+    phaseG: -0.5
+    emission: {r: 0, g: 0, b: 0, a: 1}
     blueNoiseTextures:
     - {fileID: 2800000, guid: 36f118343fc974119bee3d09e2111500, type: 3}
     - {fileID: 2800000, guid: 4b7b083e6b6734e8bb2838b0b50a0bc8, type: 3}
@@ -124,3 +126,14 @@ MonoBehaviour:
     - {fileID: 2800000, guid: 3302065f671a8450b82c9ddf07426f3a, type: 3}
     - {fileID: 2800000, guid: 56a77a3e8d64f47b6afe9e3c95cb57d5, type: 3}
     - {fileID: 2800000, guid: 331c5658939a2461d8c7a0b3691eb7d5, type: 3}
+    cloudNoise3DTextureA: {fileID: 11700000, guid: 9712b48506a4394428652c80bd967861,
+      type: 2}
+    cloudNoise3DTextureB: {fileID: 11700000, guid: d1fd19d87e2e0424c82cc47167b9afe6,
+      type: 2}
+    cloudScale: {x: 0.06, y: 0.06, z: 0.06}
+    densityClip: 0
+    inCloudMin: {x: -50, y: 0, z: -50, w: 0}
+    inCloudMax: {x: 50, y: 100, z: 50, w: 0}
+    cloudFlowSpeed: {x: 1, y: 1, z: 1, w: 0}
+    weatherDataTexture: {fileID: 2800000, guid: dd902d1943fde32489e2d1dc24e2935e,
+      type: 2}

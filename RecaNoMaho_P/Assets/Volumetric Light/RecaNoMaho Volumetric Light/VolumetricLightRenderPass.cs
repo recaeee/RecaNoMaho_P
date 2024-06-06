@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
@@ -19,40 +20,47 @@ namespace RecaNoMaho
         static class ShaderConstants
         {
             //光源相关
-            public static readonly int _DirLightDistance = Shader.PropertyToID("_DirLightDistance");
             public static readonly int _LightPosition = Shader.PropertyToID("_LightPosition");
             public static readonly int _LightDirection = Shader.PropertyToID("_LightDirection");
             public static readonly int _LightColor = Shader.PropertyToID("_LightColor");
             public static readonly int _LightCosHalfAngle = Shader.PropertyToID("_LightCosHalfAngle");
-            public static readonly int _UseShadow = Shader.PropertyToID("_UseShadow");
             public static readonly int _ShadowLightIndex = Shader.PropertyToID("_ShadowLightIndex");
+            public static readonly int _ApplyShadow = Shader.PropertyToID("_ApplyShadow");
             
             //Ray Marching相关
             public static readonly int _BoundaryPlanesCount = Shader.PropertyToID("_BoundaryPlanesCount");
             public static readonly int _BoundaryPlanes = Shader.PropertyToID("_BoundaryPlanes");
             public static readonly int _Steps = Shader.PropertyToID("_Steps");
-            public static readonly int _TransmittanceExtinction = Shader.PropertyToID("_TransmittanceExtinction");
-            public static readonly int _Absorption = Shader.PropertyToID("_Absorption");
-            public static readonly int _IncomingLoss = Shader.PropertyToID("_IncomingLoss");
-            public static readonly int _HGFactor = Shader.PropertyToID("_HGFactor");
+            
+            public static readonly int _ScatteringExtinction = Shader.PropertyToID("_ScatteringExtinction");
+            public static readonly int _EmissionPhaseG = Shader.PropertyToID("_EmissionPhaseG");
+                
             public static readonly int _BlueNoiseTexture = Shader.PropertyToID("_BlueNoiseTexture");
             public static readonly int _RenderExtent = Shader.PropertyToID("_RenderExtent");
+
+            //云层塑造
+            public static readonly int _CloudNoise3DTextureA = Shader.PropertyToID("_CloudNoise3DTextureA");
+            public static readonly int _CloudNoise3DTextureB = Shader.PropertyToID("_CloudNoise3DTextureB");
+            public static readonly int _CloudScale = Shader.PropertyToID("_CloudScale");
+            public static readonly int _DensityClip = Shader.PropertyToID("_DensityClip");
+            public static readonly int _InCloudMin = Shader.PropertyToID("_InCloudMin");
+            public static readonly int _InCloudMax = Shader.PropertyToID("_InCloudMax");
+            public static readonly int _CloudFlowSpeed = Shader.PropertyToID("_CloudFlowSpeed");
+            public static readonly int _WeatherDataTexture = Shader.PropertyToID("_WeatherDataTexture");
+            
             
             //相机相关
             public static readonly int _CameraPackedInfo = Shader.PropertyToID("_CameraPackedInfo");
             
             //风格化参数
-            public static readonly int _BrightIntensity = Shader.PropertyToID("_BrightIntensity");
-            public static readonly int _DarkIntensity = Shader.PropertyToID("_DarkIntensity");
+            public static readonly int _ShadowIntensity = Shader.PropertyToID("_ShadowIntensity");
         }
 
         enum ShaderPass
         {
-            COPY_BLIT = 0,
-            VOLUMETRIC_LIGHT_SPOT = 1,
+            VOLUMETRIC_LIGHT_SPOT = 0,
         }
-
-        private ProfilingSampler profilingSampler;
+        
         private Shader shader;
         private Material mat;
         
@@ -108,9 +116,7 @@ namespace RecaNoMaho
             using (new ProfilingScope(cmd, profilingSampler))
             {
                 Camera camera = renderingData.cameraData.camera;
-                cmd.SetRenderTarget(volumetricLightTex, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
-                cmd.ClearRenderTarget(false, true, Color.black);
-                
+
                 for (int i = 0; i < lightVolumeDatas.Count; i++)
                 {
                     LightVolumeData lightVolumeData = lightVolumeDatas[i];
@@ -131,20 +137,19 @@ namespace RecaNoMaho
                     cmd.SetGlobalVector(ShaderConstants._LightDirection, lightSpotDir);
                     cmd.SetGlobalVector(ShaderConstants._LightColor,
                         lightColor * lightVolumeData.lightVolumeRenderer.intensityMultiplier);
-                    cmd.SetGlobalFloat(ShaderConstants._DirLightDistance,
-                        lightVolumeRenderer.dirLightDistance);
                     cmd.SetGlobalFloat(ShaderConstants._LightCosHalfAngle,
                         light.lightType == LightType.Spot ? Mathf.Cos(Mathf.Deg2Rad * light.spotAngle / 2) : -2);
+                    cmd.SetGlobalInt(ShaderConstants._ApplyShadow, lightVolumeRenderer.applyShadow ? 1 : 0);
                     
                     //RayMarching相关参数
                     cmd.SetGlobalInt(ShaderConstants._BoundaryPlanesCount, boundaryPlanes.Count);
                     cmd.SetGlobalVectorArray(ShaderConstants._BoundaryPlanes, boundaryPlanes);
                     cmd.SetGlobalInt(ShaderConstants._Steps, lightVolumeRenderer.stepOverride ? lightVolumeRenderer.rayMarchingSteps : globalParams.steps);
-                    cmd.SetGlobalFloat(ShaderConstants._TransmittanceExtinction,
-                        lightVolumeRenderer.extinctionOverride ? lightVolumeRenderer.GetExtinction(): globalParams.GetExtinction());
-                    cmd.SetGlobalFloat(ShaderConstants._Absorption, lightVolumeRenderer.extinctionOverride ? lightVolumeRenderer.absorption : globalParams.absorption);
-                    cmd.SetGlobalFloat(ShaderConstants._IncomingLoss, lightVolumeRenderer.inComingLoss);
-                    cmd.SetGlobalFloat(ShaderConstants._HGFactor, globalParams.HGFactor);
+                    
+                    cmd.SetGlobalColor(ShaderConstants._ScatteringExtinction,
+                        lightVolumeRenderer.mediaOverride ? lightVolumeRenderer.GetScatteringExtinction() : globalParams.GetScatteringExtinction());
+                    cmd.SetGlobalColor(ShaderConstants._EmissionPhaseG, lightVolumeRenderer.mediaOverride ? lightVolumeRenderer.GetEmissionPhaseG() : globalParams.GetEmissionPhaseG());
+                    
                     if (globalParams.blueNoiseTextures.Count != 0)
                     {
                         cmd.SetGlobalTexture(ShaderConstants._BlueNoiseTexture, globalParams.blueNoiseTextures[frameIndex % globalParams.blueNoiseTextures.Count]);
@@ -161,37 +166,45 @@ namespace RecaNoMaho
                             new Vector4(sourceDesc.width, sourceDesc.height, 1f / sourceDesc.width,
                                 1f / sourceDesc.height));
                     }
-                    
-                    
+
+                    if (globalParams.cloudNoise3DTextureA != null && globalParams.cloudNoise3DTextureB != null && globalParams.weatherDataTexture != null)
+                    {
+                        cmd.SetGlobalTexture(ShaderConstants._CloudNoise3DTextureA, globalParams.cloudNoise3DTextureA);
+                        cmd.SetGlobalTexture(ShaderConstants._CloudNoise3DTextureB, globalParams.cloudNoise3DTextureB);
+                        cmd.SetGlobalVector(ShaderConstants._CloudScale, globalParams.cloudScale);
+                        cmd.SetGlobalFloat(ShaderConstants._DensityClip, globalParams.densityClip);
+                        cmd.SetGlobalVector(ShaderConstants._InCloudMin, globalParams.inCloudMin);
+                        cmd.SetGlobalVector(ShaderConstants._InCloudMax, globalParams.inCloudMax);
+                        cmd.SetGlobalVector(ShaderConstants._CloudFlowSpeed, globalParams.cloudFlowSpeed);
+                        cmd.SetGlobalTexture(ShaderConstants._WeatherDataTexture, globalParams.weatherDataTexture);
+                    }
+
                     //相机相关
                     float tanFov = Mathf.Tan(camera.fieldOfView / 2 * Mathf.Deg2Rad);
                     cmd.SetGlobalVector(ShaderConstants._CameraPackedInfo, new Vector4(tanFov, tanFov * camera.aspect, 0, 0));
                     
                     //风格化参数
-                    cmd.SetGlobalFloat(ShaderConstants._BrightIntensity, lightVolumeRenderer.brightIntensity);
-                    cmd.SetGlobalFloat(ShaderConstants._DarkIntensity, lightVolumeRenderer.darkIntentsity);
+                    cmd.SetGlobalFloat(ShaderConstants._ShadowIntensity, lightVolumeRenderer.shadowIntensity);
 
                     switch (light.lightType)
                     {
-                        case LightType.Point:
-                            break;
                         case LightType.Spot:
                             cmd.DrawMesh(lightVolumeRenderer.volumeMesh,
                                 lightVolumeRenderer.transform.localToWorldMatrix,
                                 mat, 0, (int)ShaderPass.VOLUMETRIC_LIGHT_SPOT);
                             break;
+                        //暂时不支持方向光和点光源，可自行拓展
                         case LightType.Directional:
+                            break;
+                        case LightType.Point:
                             break;
                     }
                 }
                 
-                //Blit到ColorAttachment
-                CommonUtil.BlitAdd(cmd, volumetricLightTex, renderingData.cameraData.renderer.cameraColorTargetHandle);
-
-                context.ExecuteCommandBuffer(cmd);
-                cmd.Clear();
-                CommandBufferPool.Release(cmd);
             }
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+            CommandBufferPool.Release(cmd);
         }
 
         public void Cleanup()
@@ -265,7 +278,6 @@ namespace RecaNoMaho
                 volumetricLightTex.name = "_VolumetricLightTex";
                 volumetricLightTex.filterMode = FilterMode.Bilinear;
                 volumetricLightTex.wrapMode = TextureWrapMode.Clamp;
-                
             }
         }
     }
