@@ -11,3 +11,6 @@ RecaNoMaho项目仓库：https://github.com/recaeee/RecaNoMaho_P
 #### 目录
 
 1. 【RecaNoMaho】从零开始的体积光渲染
+   ![b08660e53624335d34a65c7a8b1f9a13](https://raw.githubusercontent.com/recaeee/PicGo/main/b08660e53624335d34a65c7a8b1f9a13.png)
+2. 【RecaNoMaho】从零开始的体积光渲染——续
+   ![20240606225021](https://raw.githubusercontent.com/recaeee/PicGo/main/20240606225021.png)
