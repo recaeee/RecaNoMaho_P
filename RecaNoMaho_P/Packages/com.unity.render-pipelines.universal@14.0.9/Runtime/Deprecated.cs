@@ -57,13 +57,13 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <inheritdoc/>
-        internal override void SwapColorBuffer(CommandBuffer cmd)
+        public override void SwapColorBuffer(CommandBuffer cmd)
         {
             throw new NotSupportedException(k_ErrorMessage);
         }
 
         /// <inheritdoc/>
-        internal override RTHandle GetCameraColorFrontBuffer(CommandBuffer cmd)
+        public override RTHandle GetCameraColorFrontBuffer(CommandBuffer cmd)
         {
             throw new NotImplementedException();
         }

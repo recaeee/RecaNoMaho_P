@@ -110,6 +110,8 @@ float4 _ShadowBias; // x: depth bias, y: normal bias
 #define SOFT_SHADOW_QUALITY_MEDIUM half(2.0)
 #define SOFT_SHADOW_QUALITY_HIGH   half(3.0)
 
+#include "Assets/PCSS/PCSS.hlsl"
+
 struct ShadowSamplingData
 {
     half4 shadowOffset0;
@@ -276,7 +278,9 @@ real SampleShadowmap(TEXTURE2D_SHADOW_PARAM(ShadowMap, sampler_ShadowMap), float
     real shadowStrength = shadowParams.x;
 
     // Quality levels are only for platforms requiring strict static branches
-    #if defined(_SHADOWS_SOFT_LOW)
+    #if defined(RECANOMAHO_PCSS)
+        attenuation = ForwardPCSS(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData.shadowmapSize);
+    #elif defined(_SHADOWS_SOFT_LOW)
         attenuation = SampleShadowmapFilteredLowQuality(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
     #elif defined(_SHADOWS_SOFT_MEDIUM)
         attenuation = SampleShadowmapFilteredMediumQuality(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
@@ -293,6 +297,44 @@ real SampleShadowmap(TEXTURE2D_SHADOW_PARAM(ShadowMap, sampler_ShadowMap), float
         }
     #else
         attenuation = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz));
+    #endif
+
+    attenuation = LerpWhiteTo(attenuation, shadowStrength);
+
+    // Shadow coords that fall out of the light frustum volume must always return attenuation 1.0
+    // TODO: We could use branch here to save some perf on some platforms.
+    return BEYOND_SHADOW_FAR(shadowCoord) ? 1.0 : attenuation;
+}
+
+real SampleShadowmap(TEXTURE2D_SHADOW_PARAM(ShadowMap, sampler_ShadowMap), float4 shadowCoord, ShadowSamplingData samplingData, half4 shadowParams, bool isPerspectiveProjection, float2 screenCoord)
+{
+    // Compiler will optimize this branch away as long as isPerspectiveProjection is known at compile time
+    if (isPerspectiveProjection)
+        shadowCoord.xyz /= shadowCoord.w;
+
+    real attenuation;
+    real shadowStrength = shadowParams.x;
+
+    // Quality levels are only for platforms requiring strict static branches
+    #if defined(RECANOMAHO_PCSS)
+    attenuation = DeferredPCSS(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData.shadowmapSize, screenCoord);
+    #elif defined(_SHADOWS_SOFT_LOW)
+    attenuation = SampleShadowmapFilteredLowQuality(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
+    #elif defined(_SHADOWS_SOFT_MEDIUM)
+    attenuation = SampleShadowmapFilteredMediumQuality(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
+    #elif defined(_SHADOWS_SOFT_HIGH)
+    attenuation = SampleShadowmapFilteredHighQuality(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
+    #elif defined(_SHADOWS_SOFT)
+    if (shadowParams.y > SOFT_SHADOW_QUALITY_OFF)
+    {
+        attenuation = SampleShadowmapFiltered(TEXTURE2D_SHADOW_ARGS(ShadowMap, sampler_ShadowMap), shadowCoord, samplingData);
+    }
+    else
+    {
+        attenuation = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz));
+    }
+    #else
+    attenuation = real(SAMPLE_TEXTURE2D_SHADOW(ShadowMap, sampler_ShadowMap, shadowCoord.xyz));
     #endif
 
     attenuation = LerpWhiteTo(attenuation, shadowStrength);
@@ -326,7 +368,7 @@ float4 TransformWorldToShadowCoord(float3 positionWS)
 
     float4 shadowCoord = mul(_MainLightWorldToShadow[cascadeIndex], float4(positionWS, 1.0));
 
-    return float4(shadowCoord.xyz, 0);
+    return float4(shadowCoord.xyz, cascadeIndex);
 }
 
 half MainLightRealtimeShadow(float4 shadowCoord)
@@ -339,6 +381,19 @@ half MainLightRealtimeShadow(float4 shadowCoord)
         ShadowSamplingData shadowSamplingData = GetMainLightShadowSamplingData();
         half4 shadowParams = GetMainLightShadowParams();
         return SampleShadowmap(TEXTURE2D_ARGS(_MainLightShadowmapTexture, sampler_LinearClampCompare), shadowCoord, shadowSamplingData, shadowParams, false);
+    #endif
+}
+
+half MainLightRealtimeShadow(float4 shadowCoord, float2 screenCoord)
+{
+    #if !defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+        return half(1.0);
+    #elif defined(_MAIN_LIGHT_SHADOWS_SCREEN) && !defined(_SURFACE_TYPE_TRANSPARENT)
+        return SampleScreenSpaceShadowmap(shadowCoord);
+    #else
+        ShadowSamplingData shadowSamplingData = GetMainLightShadowSamplingData();
+        half4 shadowParams = GetMainLightShadowParams();
+        return SampleShadowmap(TEXTURE2D_ARGS(_MainLightShadowmapTexture, sampler_LinearClampCompare), shadowCoord, shadowSamplingData, shadowParams, false, screenCoord);
     #endif
 }
 
@@ -433,6 +488,25 @@ half MainLightShadow(float4 shadowCoord, float3 positionWS, half4 shadowMask, ha
 #else
     half shadowFade = half(1.0);
 #endif
+
+    return MixRealtimeAndBakedShadows(realtimeShadow, bakedShadow, shadowFade);
+}
+
+half MainLightShadow(float4 shadowCoord, float3 positionWS, half4 shadowMask, half4 occlusionProbeChannels, float2 screenCoord)
+{
+    half realtimeShadow = MainLightRealtimeShadow(shadowCoord, screenCoord);
+
+    #ifdef CALCULATE_BAKED_SHADOWS
+    half bakedShadow = BakedShadow(shadowMask, occlusionProbeChannels);
+    #else
+    half bakedShadow = half(1.0);
+    #endif
+
+    #ifdef MAIN_LIGHT_CALCULATE_SHADOWS
+    half shadowFade = GetMainLightShadowFade(positionWS);
+    #else
+    half shadowFade = half(1.0);
+    #endif
 
     return MixRealtimeAndBakedShadows(realtimeShadow, bakedShadow, shadowFade);
 }

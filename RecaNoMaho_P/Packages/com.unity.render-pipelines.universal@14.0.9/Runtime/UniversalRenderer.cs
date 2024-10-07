@@ -1575,7 +1575,7 @@ namespace UnityEngine.Rendering.Universal
             return supportsDepthCopy || msaaDepthResolve;
         }
 
-        internal override void SwapColorBuffer(CommandBuffer cmd)
+        public void SwapColorBuffer(CommandBuffer cmd)
         {
             m_ColorBufferSystem.Swap();
 
@@ -1591,12 +1591,12 @@ namespace UnityEngine.Rendering.Universal
             cmd.SetGlobalTexture("_AfterPostProcessTexture", m_ActiveCameraColorAttachment.nameID);
         }
 
-        internal override RTHandle GetCameraColorFrontBuffer(CommandBuffer cmd)
+        public override RTHandle GetCameraColorFrontBuffer(CommandBuffer cmd)
         {
             return m_ColorBufferSystem.GetFrontBuffer(cmd);
         }
 
-        internal override RTHandle GetCameraColorBackBuffer(CommandBuffer cmd)
+        public override RTHandle GetCameraColorBackBuffer(CommandBuffer cmd)
         {
             return m_ColorBufferSystem.GetBackBuffer(cmd);
         }

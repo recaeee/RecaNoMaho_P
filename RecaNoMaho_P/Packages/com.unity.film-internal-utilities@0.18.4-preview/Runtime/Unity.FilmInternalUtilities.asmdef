@@ -1,0 +1,26 @@
+{
+    "name": "Unity.FilmInternalUtilities",
+    "references": [
+        "GUID:f06555f75b070af458a003d92f9efb00"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.timeline",
+            "expression": "1.5.0-preview",
+            "define": "AT_USE_TIMELINE_GE_1_5_0"
+        },
+        {
+            "name": "com.unity.timeline",
+            "expression": "1.6.0-preview",
+            "define": "AT_USE_TIMELINE_GE_1_6_0"
+        }
+    ],
+    "noEngineReferences": false
+}

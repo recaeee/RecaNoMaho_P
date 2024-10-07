@@ -136,7 +136,7 @@ namespace RecaNoMaho
             CommonUtilMat.SetVector(ShaderConstants._BlitScaleBias, new Vector4(1, 1, 0, 0));
             cmd.SetGlobalTexture(ShaderConstants._BlitTexture, source);
             cmd.SetRenderTarget(destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-            DrawTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.BlitAdd);
+            DrawFullScreenTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.BlitAdd);
         }
         
         public static void BlitBlendOneSrcAlpha(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination)
@@ -144,7 +144,7 @@ namespace RecaNoMaho
             CommonUtilMat.SetVector(ShaderConstants._BlitScaleBias, new Vector4(1, 1, 0, 0));
             cmd.SetGlobalTexture(ShaderConstants._BlitTexture, source);
             cmd.SetRenderTarget(destination, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-            DrawTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.BlitBlendOneSrcAlpha);
+            DrawFullScreenTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.BlitBlendOneSrcAlpha);
         }
         
         public static void BlitCopyDepth(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination)
@@ -152,10 +152,18 @@ namespace RecaNoMaho
             CommonUtilMat.SetVector(ShaderConstants._BlitScaleBias, new Vector4(1, 1, 0, 0));
             cmd.SetGlobalTexture(ShaderConstants._BlitTexture, source);
             cmd.SetRenderTarget(destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
-            DrawTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.CopyDepth);
+            DrawFullScreenTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.CopyDepth);
+        }
+        
+        public static void BlitCopyColor(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination)
+        {
+            CommonUtilMat.SetVector(ShaderConstants._BlitScaleBias, new Vector4(1, 1, 0, 0));
+            cmd.SetGlobalTexture(ShaderConstants._BlitTexture, source);
+            cmd.SetRenderTarget(destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+            DrawFullScreenTriangle(cmd, CommonUtilMat, (int)CommonUtilPass.CopyDepth);
         }
 
-        private static void DrawTriangle(CommandBuffer cmd, Material material, int shaderPass)
+        public static void DrawFullScreenTriangle(CommandBuffer cmd, Material material, int shaderPass)
         {
             if (SystemInfo.graphicsShaderLevel < 30)
             {

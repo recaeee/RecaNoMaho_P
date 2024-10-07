@@ -181,7 +181,8 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
                     #else
                         float4 shadowCoord = float4(0, 0, 0, 0);
                     #endif
-                    unityLight.shadowAttenuation = MainLightShadow(shadowCoord, posWS.xyz, shadowMask, _MainLightOcclusionProbes);
+        
+                    unityLight.shadowAttenuation = MainLightShadow(shadowCoord, posWS.xyz, shadowMask, _MainLightOcclusionProbes, screen_uv);
                 }
 
                 #if defined(_LIGHT_COOKIES)
@@ -463,6 +464,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
             #pragma multi_compile_fragment _ _LIGHT_COOKIES
             #pragma multi_compile _ _LIGHT_LAYERS
+            #pragma multi_compile _ RECANOMAHO_PCSS
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading
@@ -510,6 +512,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
             #pragma multi_compile_fragment _ _LIGHT_COOKIES
             #pragma multi_compile _ _LIGHT_LAYERS
+            #pragma multi_compile _ RECANOMAHO_PCSS
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading
@@ -559,6 +562,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
             #pragma multi_compile_fragment _ _LIGHT_COOKIES
             #pragma multi_compile _ _LIGHT_LAYERS
+            #pragma multi_compile _ RECANOMAHO_PCSS
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading
@@ -608,6 +612,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
             #pragma multi_compile_fragment _ _LIGHT_COOKIES
+            #pragma multi_compile _ RECANOMAHO_PCSS
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading

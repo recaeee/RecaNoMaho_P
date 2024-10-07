@@ -1,0 +1,26 @@
+{
+  "displayName": "Film Internal Utilities",
+  "name": "com.unity.film-internal-utilities",
+  "unity": "2020.3",
+  "version": "0.18.4-preview",
+  "description": "A package containing internal utility functions to support the development of film packages/modules for Unity",
+  "dependencies": {
+    "com.unity.modules.uielements": "1.0.0",
+    "com.unity.timeline": "1.2.18"
+  },
+  "contributors": [
+    "Sindharta Tanuwijaya <sindharta.tanuwijaya@unity3d.com> (https://github.com/sindharta)"
+  ],
+  "_upm": {
+    "changelog": "### Fixed\n* fix: disable Analytics on platforms that do not support Analytics"
+  },
+  "upmCi": {
+    "footprint": "bafe440ef2e42a0a91c606809099fcd56aef4cc3"
+  },
+  "documentationUrl": "https://docs.unity3d.com/Packages/com.unity.film-internal-utilities@0.18/manual/index.html",
+  "repository": {
+    "url": "https://github.com/Unity-Technologies/AnimeSolution.git",
+    "type": "git",
+    "revision": "e2de226377d625af9002805dbec3e6e5454f365a"
+  }
+}

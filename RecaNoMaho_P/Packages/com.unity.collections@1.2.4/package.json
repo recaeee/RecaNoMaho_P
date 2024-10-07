@@ -1,0 +1,28 @@
+{
+  "name": "com.unity.collections",
+  "displayName": "Collections",
+  "version": "1.2.4",
+  "unity": "2020.3",
+  "unityRelease": "17f1",
+  "dependencies": {
+    "com.unity.burst": "1.6.6",
+    "com.unity.test-framework": "1.1.31"
+  },
+  "description": "A C# collections library providing data structures that can be used in jobs, and optimized by Burst compiler.",
+  "keywords": [
+    "dots",
+    "collections",
+    "unity"
+  ],
+  "upm": {
+    "changelog": "### Changed\n\n* Reverted some NativeArray test changes that were introduced in 1.0.0-pre.4\n\n### Fixed\n\n* Added an assembly definition file for sample code in the package to avoid spurious warnings when adding the package"
+  },
+  "upmCi": {
+    "footprint": "2e3bf6bc7be60e397777c2b26ebd0a8e27aeddd0"
+  },
+  "repository": {
+    "url": "https://github.cds.internal.unity3d.com/unity/dots.git",
+    "type": "git",
+    "revision": "32d153034bea0703098263469b88c73619422782"
+  }
+}

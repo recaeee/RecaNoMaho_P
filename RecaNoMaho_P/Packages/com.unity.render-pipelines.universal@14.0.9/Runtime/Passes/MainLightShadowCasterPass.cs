@@ -21,6 +21,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             public static int _ShadowOffset0;
             public static int _ShadowOffset1;
             public static int _ShadowmapSize;
+            public static int _CascadeOffsetScales;
         }
 
         const int k_MaxCascades = 4;
@@ -68,6 +69,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             MainLightShadowConstantBuffer._ShadowOffset0 = Shader.PropertyToID("_MainLightShadowOffset0");
             MainLightShadowConstantBuffer._ShadowOffset1 = Shader.PropertyToID("_MainLightShadowOffset1");
             MainLightShadowConstantBuffer._ShadowmapSize = Shader.PropertyToID("_MainLightShadowmapSize");
+            MainLightShadowConstantBuffer._CascadeOffsetScales = Shader.PropertyToID("_CascadeOffsetScales");
 
             m_MainLightShadowmapID = Shader.PropertyToID("_MainLightShadowmapTexture");
             m_EmptyLightShadowmapTexture = ShadowUtils.AllocShadowRT(1, 1, k_ShadowmapBufferBits, 1, 0, name: "_EmptyLightShadowmapTexture");
@@ -310,6 +312,22 @@ namespace UnityEngine.Rendering.Universal.Internal
                 cmd.SetGlobalVector(MainLightShadowConstantBuffer._ShadowmapSize, new Vector4(invShadowAtlasWidth,
                     invShadowAtlasHeight,
                     renderTargetWidth, renderTargetHeight));
+                
+                //RecaNoMaHo
+                cmd.SetGlobalVectorArray(MainLightShadowConstantBuffer._CascadeOffsetScales, new []
+                {
+                    new Vector4(m_CascadeSlices[0].offsetX * invShadowAtlasWidth, m_CascadeSlices[0].offsetY * invShadowAtlasHeight, m_CascadeSlices[0].resolution * invShadowAtlasWidth,
+                        m_CascadeSlices[0].resolution * invShadowAtlasHeight),
+                    new Vector4(m_CascadeSlices[1].offsetX * invShadowAtlasWidth, m_CascadeSlices[1].offsetY * invShadowAtlasHeight, m_CascadeSlices[1].resolution * invShadowAtlasWidth,
+                        m_CascadeSlices[1].resolution * invShadowAtlasHeight),
+                    new Vector4(m_CascadeSlices[2].offsetX * invShadowAtlasWidth, m_CascadeSlices[2].offsetY * invShadowAtlasHeight, m_CascadeSlices[2].resolution * invShadowAtlasWidth,
+                        m_CascadeSlices[2].resolution * invShadowAtlasHeight),
+                    new Vector4(m_CascadeSlices[3].offsetX * invShadowAtlasWidth, m_CascadeSlices[3].offsetY * invShadowAtlasHeight, m_CascadeSlices[3].resolution * invShadowAtlasWidth,
+                        m_CascadeSlices[3].resolution * invShadowAtlasHeight)
+                });
+
+                PcssContext.UpdateDeviceProjectionMatrixs(ref m_CascadeSlices);
+                //RecaNoMaHo
             }
         }
         private class PassData
