@@ -16,3 +16,5 @@ RecaNoMaho项目仓库：https://github.com/recaeee/RecaNoMaho_P
    ![20240606225021](https://raw.githubusercontent.com/recaeee/PicGo/main/20240606225021.png)
 3. 【RecaNoMaho】特化阴影方案PlanarShadowmap
    ![20240628124625](https://raw.githubusercontent.com/recaeee/PicGo/main/recaeee/PicGo20240628124625.png)
+4. 【RecaNoMaho】从零开始的PCSS软阴影
+   ![20241007232250](https://raw.githubusercontent.com/recaeee/PicGo/main/20241007232250.png)
